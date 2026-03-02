@@ -35,16 +35,16 @@ class Work:
         self._soup = None
         if load:
             self.reload(load_chapters)
-            
+
     def __repr__(self):
         try:
             return f"<Work [{self.title}]>"
         except:
             return f"<Work [{self.id}]>"
-    
+
     def __eq__(self, other):
         return isinstance(other, __class__) and other.id == self.id
-    
+
     def __getstate__(self):
         d = {}
         for attr in self.__dict__:
@@ -53,7 +53,7 @@ class Work:
             else:
                 d[attr] = (self.__dict__[attr], False)
         return d
-                
+
     def __setstate__(self, d):
         for attr in d:
             value, issoup = d[attr]
@@ -61,53 +61,56 @@ class Work:
                 self.__dict__[attr] = BeautifulSoup(value, "lxml")
             else:
                 self.__dict__[attr] = value
-        
+
     @threadable.threadable
     def reload(self, load_chapters=True):
         """
         Loads information about this work.
         This function is threadable.
-        
+
         Args:
             load_chapters (bool, optional): If false, chapter text won't be parsed, and Work.load_chapters() will have to be called. Defaults to True.
         """
-        
+
         for attr in self.__class__.__dict__:
             if isinstance(getattr(self.__class__, attr), cached_property):
                 if attr in self.__dict__:
                     delattr(self, attr)
-        
-        self._soup = self.request(f"https://archiveofourown.org/works/{self.id}?view_adult=true&view_full_work=true")
+
+        self._soup = self.request(
+            f"https://archiveofourown.org/works/{self.id}?view_adult=true&view_full_work=true"
+        )
         if "Error 404" in self._soup.find("h2", {"class", "heading"}).text:
             raise utils.InvalidIdError("Cannot find work")
         if load_chapters:
             self.load_chapters()
-        
+
     def set_session(self, session):
         """Sets the session used to make requests for this work
 
         Args:
             session (AO3.Session/AO3.GuestSession): session object
         """
-        
-        self._session = session 
+
+        self._session = session
 
     def load_chapters(self):
-        """Loads chapter objects for each one of this work's chapters
-        """
-        
+        """Loads chapter objects for each one of this work's chapters"""
+
         self.chapters = []
         chapters_div = self._soup.find(attrs={"id": "chapters"})
         if chapters_div is None:
             return
-        
+
         if self.nchapters > 1:
-            for n in range(1, self.nchapters+1):
+            for n in range(1, self.nchapters + 1):
                 chapter = chapters_div.find("div", {"id": f"chapter-{n}"})
                 if chapter is None:
                     continue
                 chapter.extract()
-                preface_group = chapter.find("div", {"class": ("chapter", "preface", "group")})
+                preface_group = chapter.find(
+                    "div", {"class": ("chapter", "preface", "group")}
+                )
                 if preface_group is None:
                     continue
                 title = preface_group.find("h3", {"class": "title"})
@@ -121,7 +124,7 @@ class Work:
             c = Chapter(None, self, self._session, False)
             c._soup = chapters_div
             self.chapters.append(c)
-        
+
     def get_images(self):
         """Gets all images from this work
 
@@ -131,23 +134,25 @@ class Work:
         Returns:
             dict: key = chapter_n; value = chapter.get_images()
         """
-        
+
         if not self.loaded:
-            raise utils.UnloadedError("Work isn't loaded. Have you tried calling Work.reload()?")
-        
+            raise utils.UnloadedError(
+                "Work isn't loaded. Have you tried calling Work.reload()?"
+            )
+
         chapters = {}
         for chapter in self.chapters:
             images = chapter.get_images()
             if len(images) != 0:
                 chapters[chapter.number] = images
         return chapters
-            
+
     def download(self, filetype="PDF"):
         """Downloads this work
 
         Args:
             filetype (str, optional): Desired filetype. Defaults to "PDF".
-            Known filetypes are: AZW3, EPUB, HTML, MOBI, PDF. 
+            Known filetypes are: AZW3, EPUB, HTML, MOBI, PDF.
 
         Raises:
             utils.DownloadError: Raised if there was an error with the download
@@ -156,21 +161,29 @@ class Work:
         Returns:
             bytes: File content
         """
-        
+
         if not self.loaded:
-            raise utils.UnloadedError("Work isn't loaded. Have you tried calling Work.reload()?")
+            raise utils.UnloadedError(
+                "Work isn't loaded. Have you tried calling Work.reload()?"
+            )
         download_btn = self._soup.find("li", {"class": "download"})
         for download_type in download_btn.findAll("li"):
             if download_type.a.getText() == filetype.upper():
                 url = f"https://archiveofourown.org/{download_type.a.attrs['href']}"
                 req = self.get(url)
                 if req.status_code == 429:
-                    raise utils.HTTPError("We are being rate-limited. Try again in a while or reduce the number of requests")
+                    raise utils.HTTPError(
+                        "We are being rate-limited. Try again in a while or reduce the number of requests"
+                    )
                 if not req.ok:
-                    raise utils.DownloadError("An error occurred while downloading the work")
+                    raise utils.DownloadError(
+                        "An error occurred while downloading the work"
+                    )
                 return req.content
-        raise utils.UnexpectedResponseError(f"Filetype '{filetype}' is not available for download")
-    
+        raise utils.UnexpectedResponseError(
+            f"Filetype '{filetype}' is not available for download"
+        )
+
     @threadable.threadable
     def download_to_file(self, filename, filetype="PDF"):
         """Downloads this work and saves it in the specified file.
@@ -187,12 +200,12 @@ class Work:
         """
         with open(filename, "wb") as file:
             file.write(self.download(filetype))
-            
+
     @property
     def metadata(self):
         metadata = {}
         normal_fields = (
-            "bookmarks", 
+            "bookmarks",
             "categories",
             "nchapters",
             "characters",
@@ -213,28 +226,30 @@ class Work:
             "warnings",
             "id",
             "words",
-            "collections"
+            "collections",
         )
         string_fields = (
             "date_edited",
             "date_published",
             "date_updated",
         )
-        
+
         for field in string_fields:
             try:
                 metadata[field] = str(getattr(self, field))
             except AttributeError:
                 pass
-            
+
         for field in normal_fields:
             try:
                 metadata[field] = getattr(self, field)
             except AttributeError:
                 pass
-            
+
         try:
-            metadata["authors"] = list(map(lambda author: author.username, self.authors))
+            metadata["authors"] = list(
+                map(lambda author: author.username, self.authors)
+            )
         except AttributeError:
             pass
         try:
@@ -242,15 +257,17 @@ class Work:
         except AttributeError:
             pass
         try:
-            metadata["chapter_titles"] = list(map(lambda chapter: chapter.title, self.chapters))
+            metadata["chapter_titles"] = list(
+                map(lambda chapter: chapter.title, self.chapters)
+            )
         except AttributeError:
             pass
 
         return metadata
-    
+
     def get_comments(self, maximum=None):
         """Returns a list of all threads of comments in the work. This operation can take a very long time.
-        Because of that, it is recomended that you set a maximum number of comments. 
+        Because of that, it is recomended that you set a maximum number of comments.
         Duration: ~ (0.13 * n_comments) seconds or 2.9 seconds per comment page
 
         Args:
@@ -264,13 +281,15 @@ class Work:
         Returns:
             list: List of comments
         """
-        
+
         if not self.loaded:
-            raise utils.UnloadedError("Work isn't loaded. Have you tried calling Work.reload()?")
-            
+            raise utils.UnloadedError(
+                "Work isn't loaded. Have you tried calling Work.reload()?"
+            )
+
         url = f"https://archiveofourown.org/works/{self.id}?page=%d&show_comments=true&view_adult=true&view_full_work=true"
-        soup = self.request(url%1)
-        
+        soup = self.request(url % 1)
+
         pages = 0
         div = soup.find("div", {"id": "comments_placeholder"})
         ol = div.find("ol", {"class": "pagination actions"})
@@ -279,37 +298,37 @@ class Work:
         else:
             for li in ol.findAll("li"):
                 if li.getText().isdigit():
-                    pages = int(li.getText())   
-        
+                    pages = int(li.getText())
+
         comments = []
         for page in range(pages):
             if page != 0:
-                soup = self.request(url%(page+1))
+                soup = self.request(url % (page + 1))
             ol = soup.find("ol", {"class": "thread"})
             for li in ol.findAll("li", {"role": "article"}, recursive=False):
                 if maximum is not None and len(comments) >= maximum:
                     return comments
                 id_ = int(li.attrs["id"][8:])
-                
+
                 header = li.find("h4", {"class": ("heading", "byline")})
                 if header is None or header.a is None:
                     author = None
                 else:
                     author = User(str(header.a.text), self._session, False)
-                    
+
                 if li.blockquote is not None:
                     text = li.blockquote.getText()
                 else:
-                    text = ""                  
-                
-                comment = Comment(id_, self, session=self._session, load=False)           
+                    text = ""
+
+                comment = Comment(id_, self, session=self._session, load=False)
                 setattr(comment, "authenticity_token", self.authenticity_token)
                 setattr(comment, "author", author)
                 setattr(comment, "text", text)
                 comment._thread = None
                 comments.append(comment)
         return comments
-    
+
     @threadable.threadable
     def subscribe(self):
         """Subscribes to this work.
@@ -318,12 +337,14 @@ class Work:
         Raises:
             utils.AuthError: Invalid session
         """
-        
+
         if self._session is None or not self._session.is_authed:
-            raise utils.AuthError("You can only subscribe to a work using an authenticated session")
-        
+            raise utils.AuthError(
+                "You can only subscribe to a work using an authenticated session"
+            )
+
         utils.subscribe(self, "Work", self._session)
-        
+
     @threadable.threadable
     def unsubscribe(self):
         """Unubscribes from this user.
@@ -332,56 +353,64 @@ class Work:
         Raises:
             utils.AuthError: Invalid session
         """
-        
+
         if not self.is_subscribed:
             raise Exception("You are not subscribed to this work")
         if self._session is None or not self._session.is_authed:
-            raise utils.AuthError("You can only unsubscribe from a work using an authenticated session")
-        
+            raise utils.AuthError(
+                "You can only unsubscribe from a work using an authenticated session"
+            )
+
         utils.subscribe(self, "Work", self._session, True, self._sub_id)
-        
+
     @cached_property
     def text(self):
         """This work's text"""
-        
+
         text = ""
         for chapter in self.chapters:
             text += chapter.text
             text += "\n"
         return text
-        
+
     @cached_property
     def authenticity_token(self):
         """Token used to take actions that involve this work"""
-        
+
         if not self.loaded:
             return None
-        
+
         token = self._soup.find("meta", {"name": "csrf-token"})
         return token["content"]
-        
+
     @cached_property
     def is_subscribed(self):
         """True if you're subscribed to this work"""
-        
+
         if self._session is None or not self._session.is_authed:
-            raise utils.AuthError("You can only get a user ID using an authenticated session")
-        
+            raise utils.AuthError(
+                "You can only get a user ID using an authenticated session"
+            )
+
         ul = self._soup.find("ul", {"class": "work navigation actions"})
-        input_ = ul.find("li", {"class": "subscribe"}).find("input", {"name": "commit", "value": "Unsubscribe"})
+        input_ = ul.find("li", {"class": "subscribe"}).find(
+            "input", {"name": "commit", "value": "Unsubscribe"}
+        )
         return input_ is not None
-    
+
     @cached_property
     def _sub_id(self):
         """Returns the subscription ID. Used for unsubscribing"""
-        
+
         if self._session is None or not self._session.is_authed:
-            raise utils.AuthError("You can only get a user ID using an authenticated session")
-        
+            raise utils.AuthError(
+                "You can only get a user ID using an authenticated session"
+            )
+
         ul = self._soup.find("ul", {"class": "work navigation actions"})
         id_ = ul.find("li", {"class": "subscribe"}).form.attrs["action"].split("/")[-1]
         return int(id_)
-    
+
     @threadable.threadable
     def leave_kudos(self):
         """Leave a "kudos" in this work.
@@ -395,11 +424,11 @@ class Work:
         Returns:
             bool: True if successful, False if you already left kudos there
         """
-        
+
         if self._session is None:
             raise utils.AuthError("Invalid session")
         return utils.kudos(self, self._session)
-    
+
     @threadable.threadable
     def comment(self, comment_text, email="", name="", pseud=None):
         """Leaves a comment on this work.
@@ -418,17 +447,29 @@ class Work:
         Returns:
             requests.models.Response: Response object
         """
-        
+
         if not self.loaded:
-            raise utils.UnloadedError("Work isn't loaded. Have you tried calling Work.reload()?")
-        
+            raise utils.UnloadedError(
+                "Work isn't loaded. Have you tried calling Work.reload()?"
+            )
+
         if self._session is None:
             raise utils.AuthError("Invalid session")
-            
-        return utils.comment(self, comment_text, self._session, True, email=email, name=name, pseud=pseud)
-    
+
+        return utils.comment(
+            self, comment_text, self._session, True, email=email, name=name, pseud=pseud
+        )
+
     @threadable.threadable
-    def bookmark(self, notes="", tags=None, collections=None, private=False, recommend=False, pseud=None):
+    def bookmark(
+        self,
+        notes="",
+        tags=None,
+        collections=None,
+        private=False,
+        recommend=False,
+        pseud=None,
+    ):
         """Bookmarks this work
         This function is threadable
 
@@ -444,15 +485,19 @@ class Work:
             utils.UnloadedError: Work isn't loaded
             utils.AuthError: Invalid session
         """
-        
+
         if not self.loaded:
-            raise utils.UnloadedError("Work isn't loaded. Have you tried calling Work.reload()?")
-        
+            raise utils.UnloadedError(
+                "Work isn't loaded. Have you tried calling Work.reload()?"
+            )
+
         if self._session is None:
             raise utils.AuthError("Invalid session")
-        
-        utils.bookmark(self, self._session, notes, tags, collections, private, recommend, pseud)
-        
+
+        utils.bookmark(
+            self, self._session, notes, tags, collections, private, recommend, pseud
+        )
+
     @threadable.threadable
     def delete_bookmark(self):
         """Removes a bookmark from this work
@@ -462,18 +507,20 @@ class Work:
             utils.UnloadedError: Work isn't loaded
             utils.AuthError: Invalid session
         """
-        
+
         if not self.loaded:
-            raise utils.UnloadedError("Work isn't loaded. Have you tried calling Work.reload()?")
-        
+            raise utils.UnloadedError(
+                "Work isn't loaded. Have you tried calling Work.reload()?"
+            )
+
         if self._session is None:
             raise utils.AuthError("Invalid session")
-        
+
         if self._bookmarkid is None:
             raise utils.BookmarkError("You don't have a bookmark here")
-        
+
         utils.delete_bookmark(self._bookmarkid, self._session, self.authenticity_token)
-    
+
     @threadable.threadable
     def collect(self, collections):
         """Invites/collects this work to a collection or collections
@@ -486,48 +533,53 @@ class Work:
             utils.UnloadedError: Work isn't loaded
             utils.AuthError: Invalid session
         """
-        
+
         if not self.loaded:
-            raise utils.UnloadedError("Work isn't loaded. Have you tried calling Work.reload()?")
-        
+            raise utils.UnloadedError(
+                "Work isn't loaded. Have you tried calling Work.reload()?"
+            )
+
         if self._session is None:
             raise utils.AuthError("Invalid session")
-          
+
         utils.collect(self, self._session, collections)
-        
+
     @cached_property
     def _bookmarkid(self):
         form_div = self._soup.find("div", {"id": "bookmark-form"})
-        if form_div is None: 
+        if form_div is None:
             return None
         if form_div.form is None:
             return None
-        if "action" in form_div.form.attrs and form_div.form["action"].startswith("/bookmarks"):
+        if "action" in form_div.form.attrs and form_div.form["action"].startswith(
+            "/bookmarks"
+        ):
             text = form_div.form["action"].split("/")[-1]
             if text.isdigit():
                 return int(text)
             return None
         return None
-    
+
     @property
     def loaded(self):
         """Returns True if this work has been loaded"""
         return self._soup is not None
-    
+
     @property
     def oneshot(self):
         """Returns True if this work has only one chapter"""
         return self.nchapters == 1
-    
+
     @cached_property
     def series(self):
         """Returns the series this work belongs to"""
-        
+
         from .series import Series
+
         dd = self._soup.find("dd", {"class": "series"})
         if dd is None:
             return []
-        
+
         s = []
         for span in dd.find_all("span", {"class": "position"}):
             seriesid = int(span.a.attrs["href"].split("/")[-1])
@@ -546,6 +598,7 @@ class Work:
         """
 
         from .users import User
+
         authors = self._soup.find_all("h3", {"class": "byline heading"})
         if len(authors) == 0:
             return []
@@ -565,15 +618,15 @@ class Work:
         Returns:
             int: number of chapters
         """
-        
+
         chapters = self._soup.find("dd", {"class": "chapters"})
         if chapters is not None:
             return int(self.str_format(chapters.string.split("/")[0]))
         return 0
-    
+
     @cached_property
     def expected_chapters(self):
-        """Returns the number of expected chapters for this work, or None if 
+        """Returns the number of expected chapters for this work, or None if
         the author hasn't provided an expected number
 
         Returns:
@@ -585,7 +638,7 @@ class Work:
             if n.isdigit():
                 return int(n)
         return None
-    
+
     @property
     def status(self):
         """Returns the status of this work
@@ -594,7 +647,11 @@ class Work:
             str: work status
         """
 
-        return "Completed" if self.nchapters == self.expected_chapters else "Work in Progress"
+        return (
+            "Completed"
+            if self.nchapters == self.expected_chapters
+            else "Work in Progress"
+        )
 
     @cached_property
     def hits(self):
@@ -634,11 +691,11 @@ class Work:
         if comments is not None:
             return int(self.str_format(comments.string))
         return 0
-    
+
     @cached_property
     def restricted(self):
         """Whether this is a restricted work or not
-        
+
         Returns:
             int: True if work is restricted
         """
@@ -696,7 +753,7 @@ class Work:
         if title is not None:
             return str(title.h2.text.strip())
         return ""
-    
+
     @cached_property
     def date_published(self):
         """Returns the date this work was published
@@ -734,7 +791,7 @@ class Work:
             split = update.string.split("-")
             return datetime(*list(map(int, split)))
         return self.date_published
-    
+
     @cached_property
     def tags(self):
         """Returns all the work's tags
@@ -772,7 +829,7 @@ class Work:
         Returns:
             list: List of relationships
         """
-        
+
         html = self._soup.find("dd", {"class": "relationship tags"})
         relationships = []
         if html is not None:
@@ -854,7 +911,7 @@ class Work:
         if html is None:
             return ""
         return str(BeautifulSoup.getText(html))
-    
+
     @cached_property
     def start_notes(self):
         """Text from this work's start notes"""
@@ -876,14 +933,14 @@ class Work:
         for p in notes.findAll("p"):
             text += p.getText() + "\n"
         return text
-    
+
     @cached_property
     def url(self):
         """Returns the URL to this work
 
         Returns:
             str: work URL
-        """    
+        """
 
         return f"https://archiveofourown.org/works/{self.id}"
 
@@ -898,7 +955,7 @@ class Work:
 
         chapterStatus = self._soup.find("dd", {"class": "chapters"}).string.split("/")
         return chapterStatus[0] == chapterStatus[1]
-    
+
     @cached_property
     def collections(self):
         """Returns all the collections the work belongs to
@@ -913,16 +970,23 @@ class Work:
             for collection in html.find_all("a"):
                 collections.append(collection.get_text())
         return collections
-    
+
     def get(self, *args, **kwargs):
-        """Request a web page and return a Response object"""  
-        
+        """Request a web page and return a Response object"""
+
         if self._session is None:
             req = requester.request("get", *args, **kwargs)
         else:
-            req = requester.request("get", *args, **kwargs, session=self._session.session)
-        if req.status_code == 429:
-            raise utils.HTTPError("We are being rate-limited. Try again in a while or reduce the number of requests")
+            req = requester.request(
+                "get", *args, **kwargs, session=self._session.session
+            )
+        match req.status_code:
+            case 429:
+                raise utils.HTTPError(
+                    "Error 429: We are being rate-limited. Try again in a while or reduce the number of requests"
+                )
+            case 525:
+                raise utils.HTTPError("Error 525: SSL Error")
         return req
 
     def request(self, url):
@@ -937,7 +1001,9 @@ class Work:
 
         req = self.get(url)
         if len(req.content) > 650000:
-            warnings.warn("This work is very big and might take a very long time to load")
+            warnings.warn(
+                "This work is very big and might take a very long time to load"
+            )
         soup = BeautifulSoup(req.content, "lxml")
         return soup
 

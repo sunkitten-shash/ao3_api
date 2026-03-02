@@ -25,8 +25,25 @@ KUDOS = "kudos_count"
 DESCENDING = "desc"
 ASCENDING = "asc"
 
+# Category IDs
+CATEGORY_FF = 116
+CATEGORY_FM = 22
+CATEGORY_GEN = 21
+CATEGORY_MM = 23
+CATEGORY_MULTI = 2246
+CATEGORY_OTHER = 24
+
+# Warning IDs
+WARNING_CHOOSE_NOT_TO_USE = 14
+WARNING_VIOLENCE = 17
+WARNING_DEATH = 18
+WARNING_NONE = 16
+WARNING_NONCON = 19
+WARNING_UNDERAGE = 20
+
 
 class Search:
+
     def __init__(
         self,
         any_field="",
@@ -51,7 +68,10 @@ class Search:
         characters="",
         relationships="",
         tags="",
-        session=None):
+        session=None,
+        category_ids=None,
+        warning_ids=None,
+    ):
 
         self.any_field = any_field
         self.title = title
@@ -75,7 +95,10 @@ class Search:
         self.sort_column = sort_column
         self.sort_direction = sort_direction
         self.revised_at = revised_at
-        
+
+        self.category_ids = category_ids
+        self.warning_ids = warning_ids
+
         self.session = session
 
         self.results = None
@@ -89,14 +112,42 @@ class Search:
         """
 
         soup = search(
-            self.any_field, self.title, self.author, self.single_chapter,
-            self.word_count, self.language, self.fandoms, self.rating, self.hits,
-            self.kudos, self.crossovers, self.bookmarks, self.excluded_tags, self.comments, self.completion_status, self.page,
-            self.sort_column, self.sort_direction, self.revised_at, self.session,
-            self.characters, self.relationships, self.tags)
+            self.any_field,
+            self.title,
+            self.author,
+            self.single_chapter,
+            self.word_count,
+            self.language,
+            self.fandoms,
+            self.rating,
+            self.hits,
+            self.kudos,
+            self.crossovers,
+            self.bookmarks,
+            self.excluded_tags,
+            self.comments,
+            self.completion_status,
+            self.page,
+            self.sort_column,
+            self.sort_direction,
+            self.revised_at,
+            self.session,
+            self.characters,
+            self.relationships,
+            self.tags,
+            self.category_ids,
+            self.warning_ids,
+        )
 
         results = soup.find("ol", {"class": ("work", "index", "group")})
-        if results is None and soup.find("p", text="No results found. You may want to edit your search to make it less specific.") is not None:
+        if (
+            results is None
+            and soup.find(
+                "p",
+                text="No results found. You may want to edit your search to make it less specific.",
+            )
+            is not None
+        ):
             self.results = []
             self.total_results = 0
             self.pages = 0
@@ -106,15 +157,23 @@ class Search:
         for work in results.find_all("li", {"role": "article"}):
             if work.h4 is None:
                 continue
-            
+
             new = get_work_from_banner(work)
             new._session = self.session
             works.append(new)
 
         self.results = works
         maindiv = soup.find("div", {"class": "works-search region", "id": "main"})
-        self.total_results = int(maindiv.find("h3", {"class": "heading"}).getText().replace(',','').replace('.','').strip().split(" ")[0])
+        self.total_results = int(
+            maindiv.find("h3", {"class": "heading"})
+            .getText()
+            .replace(",", "")
+            .replace(".", "")
+            .strip()
+            .split(" ")[0]
+        )
         self.pages = ceil(self.total_results / 20)
+
 
 def search(
     any_field="",
@@ -139,7 +198,10 @@ def search(
     session=None,
     characters="",
     relationships="",
-    tags=""):
+    tags="",
+    category_ids=None,
+    warning_ids=None,
+):
     """Returns the results page for the search as a Soup object
 
     Args:
@@ -214,6 +276,18 @@ def search(
         query.add_field(f"work_search[sort_direction]={sort_direction}")
     if revised_at != "":
         query.add_field(f"work_search[revised_at]={revised_at}")
+    if category_ids is not None:
+        if isinstance(category_ids, (list, tuple)):
+            for cat in category_ids:
+                query.add_field(f"work_search[category_ids][]={cat}")
+        else:
+            query.add_field(f"work_search[category_ids][]={category_ids}")
+    if warning_ids is not None:
+        if isinstance(warning_ids, (list, tuple)):
+            for warning in warning_ids:
+                query.add_field(f"work_search[archive_warning_ids][]={warning}")
+        else:
+            query.add_field(f"work_search[archive_warning_ids][]={warning_ids}")
 
     url = f"https://archiveofourown.org/works/search?{query.string}"
 
@@ -222,6 +296,8 @@ def search(
     else:
         req = session.get(url)
     if req.status_code == 429:
-        raise utils.HTTPError("We are being rate-limited. Try again in a while or reduce the number of requests")
+        raise utils.HTTPError(
+            "We are being rate-limited. Try again in a while or reduce the number of requests"
+        )
     soup = BeautifulSoup(req.content, features="lxml")
     return soup
