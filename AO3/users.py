@@ -394,10 +394,13 @@ class User:
             req = requester.request(
                 "get", *args, **kwargs, session=self._session.session
             )
-        if req.status_code == 429:
-            raise utils.HTTPError(
-                "We are being rate-limited. Try again in a while or reduce the number of requests"
-            )
+        match req.status_code:
+            case 429:
+                raise utils.HTTPError(
+                    "Error 429: We are being rate-limited. Try again in a while or reduce the number of requests"
+                )
+            case 525:
+                raise utils.HTTPError("Error 525: SSL Error")
         return req
 
     def request(self, url):
